@@ -1,0 +1,6 @@
+[submodule "MQBench"]
+	path = MQBench
+	url = https://github.com/ModelTC/MQBench.git
+[submodule "pytorch_geometric"]
+	path = pytorch_geometric
+	url = https://github.com/pyg-team/pytorch_geometric.git
