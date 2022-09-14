@@ -3,7 +3,7 @@ from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
 from torchvision.models import resnet18
 from traced_all_fixbit.prepare_by_platform import gnn_prepare_by_platform
-from mqbench.prepare_by_platform import BackendType
+from mqbench.prepare_by_platform import BackendType, prepare_by_platform
 
 model = resnet18(True)
 model_quant = resnet18(True)
@@ -16,14 +16,14 @@ my_config = {
         'a_fakequantize': 'DSQFakeQuantize',
         'w_qscheme': {
             'bit': 4,
-            'symmetry': True,
-            'per_channel': False,
+            'symmetry': False,
+            'per_channel': True,
             'pot_scale': True
         },
         'a_qscheme': {
             'bit': 4,
-            'symmetry': True,
-            'per_channel': False,
+            'symmetry': False,
+            'per_channel': True,
             'pot_scale': True
         }
     }
