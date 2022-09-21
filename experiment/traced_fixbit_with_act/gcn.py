@@ -42,13 +42,13 @@ my_qconfig = {
         'w_qscheme': {
             'bit': args.bit_width,
             'symmetry': True,
-            'per_channel': True,
+            'per_channel': False,
             'pot_scale': True
         },
         'a_qscheme': {
             'bit': args.bit_width,
             'symmetry': True,
-            'per_channel': True,
+            'per_channel': False,
             'pot_scale': True
         }
     }
