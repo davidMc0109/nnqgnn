@@ -13,7 +13,7 @@ from mqbench.utils.state import enable_quantization, enable_calibration
 parser = argparse.ArgumentParser()
 parser.add_argument('--use_gdc', action='store_true',
                     help='Use GDC preprocessing.')
-parser.add_argument('--bit_width', default=2, type=int, help='the bit_width for quantization')
+parser.add_argument('--bit_width', default=8, type=int, help='the bit_width for quantization')
 args = parser.parse_args()
 
 dataset = 'Cora'

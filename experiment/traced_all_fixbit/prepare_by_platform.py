@@ -117,14 +117,15 @@ def gnn_prepare_by_platform(
     # TODO: the version in compatible version of torch_geometric is not working, use another Transformer from newer repo
     # TODO: the newer version still can not traced inside MessagePassing, need to implement our own.
     # from torch_geometric.nn.fx import Transformer
-    # from fx import Transformer
-    class Transformer:
-        def __init__(self, model):
-            super(Transformer, self).__init__()
-            raise NotImplementedError("Not Implement")
-
-        def transform(self):
-            raise NotImplementedError("Not Implement")
+    from fx import Transformer
+    # class Transformer:
+    #     def __init__(self, model):
+    #         super(Transformer, self).__init__()
+    #         self.model = model
+    #         raise NotImplementedError("Not Implement")
+    #
+    #     def transform(self):
+    #         raise NotImplementedError("Not Implement")
 
     model = Transformer(model).transform()
     model = replace_linear_pyg2torch(model)

@@ -5,15 +5,12 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import Planetoid
 import torch_geometric.transforms as T
-from torch_geometric.nn import GCNConv, ChebConv  # noqa
-from mqbench.prepare_by_platform import BackendType
-from prepare_by_platform import gnn_prepare_by_platform
-from mqbench.utils.state import enable_quantization, enable_calibration
+from torch_geometric.nn import GCNConv, ChebConv, MessagePassing  # noqa
+import torch.fx as fx
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--use_gdc', action='store_true',
                     help='Use GDC preprocessing.')
-parser.add_argument('--bit_width', default=2, type=int, help='the bit_width for quantization')
 args = parser.parse_args()
 
 dataset = 'Cora'
@@ -28,31 +25,6 @@ if args.use_gdc:
                 sparsification_kwargs=dict(method='topk', k=128,
                                            dim=0), exact=True)
     data = gdc(data)
-
-my_qconfig = {
-    'extra_qconfig_dict':{
-        # 'w_observer': 'ClipStdObserver',
-        # 'a_observer': 'ClipStdObserver',
-        # 'w_fakequantize': 'DSQFakeQuantize',
-        # 'a_fakequantize': 'DSQFakeQuantize',
-        'w_observer': 'MinMaxObserver',
-        'a_observer': 'EMAMinMaxObserver',
-        'w_fakequantize': 'LearnableFakeQuantize',
-        'a_fakequantize': 'LearnableFakeQuantize',
-        'w_qscheme': {
-            'bit': args.bit_width,
-            'symmetry': True,
-            'per_channel': False,
-            'pot_scale': True
-        },
-        'a_qscheme': {
-            'bit': args.bit_width,
-            'symmetry': True,
-            'per_channel': False,
-            'pot_scale': True
-        }
-    }
-}
 
 
 class Net(torch.nn.Module):
@@ -75,7 +47,15 @@ class Net(torch.nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model, data = Net().to(device), data.to(device)
-model = gnn_prepare_by_platform(model, BackendType.Academic, my_qconfig).to(device)
+
+# model.conv1.propagate = fx.wrap(model.conv1.propagate)
+# model.conv2.propagate = fx.wrap(model.conv2.propagate)
+# autowrap_functions = (MessagePassing.propagate,)
+# fx.wrap('self.propagate', for)
+
+tracer = fx.Tracer()
+graph_model = tracer.trace(model)
+hook = 1
 
 optimizer = torch.optim.Adam([
     dict(params=model.conv1.parameters(), weight_decay=5e-4),
@@ -102,13 +82,7 @@ def test():
 
 
 best_val_acc = test_acc = 0
-for epoch in range(1, 501):
-    if epoch == 1:
-        enable_calibration(model)
-        pass
-    elif epoch == 6:
-        enable_quantization(model)
-        pass
+for epoch in range(1, 201):
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:
