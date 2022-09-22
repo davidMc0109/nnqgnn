@@ -1,13 +1,20 @@
-import copy
 from typing import Any, Dict
 
 import torch
 import torch_geometric.nn.dense
+from mqbench.fake_quantize.quantize_base import QuantizeBase
+from mqbench.fuser_method_mappings import fuse_custom_config_dict
+from mqbench.prepare_by_platform import CustomedTracer
 from mqbench.prepare_by_platform import prepare_by_platform, BackendType
-from lp_academic_quantizer import LPAcademicQuantizer
+from mqbench.utils.logger import logger
+from mqbench.utils.registry import DEFAULT_MODEL_QUANTIZER
 from mqbench.utils.registry import register_model_quantizer
+from torch.ao.quantization.quantization_mappings import get_default_static_quant_module_mappings
 from torch.fx import Tracer
+from torch.quantization import swap_module
 from torch_geometric.nn import MessagePassing
+
+from lp_academic_quantizer import LPAcademicQuantizer
 
 __all__ = ['gnn_prepare_by_platform']
 
@@ -20,13 +27,16 @@ def gnn_prepare_by_platform(
     if deploy_backend == BackendType.Academic:
         register_model_quantizer(deploy_backend)(LPAcademicQuantizer)
 
-    class GNNCustomedTracer(Tracer):
+    class GNNCustomedTracer(CustomedTracer):
         def __init__(self, *args, **kwargs):
             super(GNNCustomedTracer, self).__init__(*args, **kwargs)
 
         def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
             # if the module is a MessagePassing, do not tracing in
             if isinstance(m, MessagePassing):
+                return True
+            if isinstance(m, torch_geometric.nn.Set2Set):
+                logger.warning("A Set2Set detected, and not quantized. Tts quantization is not implemented since there is a LSTM inside")
                 return True
             return super(GNNCustomedTracer, self).is_leaf_module(m, module_qualified_name)
 
@@ -35,20 +45,14 @@ def gnn_prepare_by_platform(
     if not ('additional_module_type' in prepare_custom_config_dict['extra_quantizer_dict']):
         prepare_custom_config_dict['extra_quantizer_dict']['additional_module_type'] = tuple()
     prepare_custom_config_dict['extra_quantizer_dict']['additional_module_type'] += (MessagePassing,)
-
-    tracer = GNNCustomedTracer()
+    customed_leaf_modules = prepare_custom_config_dict.get('leaf_module', [])
+    tracer = GNNCustomedTracer(customed_leaf_module=tuple(customed_leaf_modules))
     if custom_tracer is not None:
         tracer = custom_tracer
     graph_model = prepare_by_platform(model, deploy_backend, prepare_custom_config_dict, tracer)
     hook = 0
 
     # replace fp to int
-    from torch.quantization import swap_module
-    from mqbench.utils.registry import DEFAULT_MODEL_QUANTIZER
-    from mqbench.fuser_method_mappings import fuse_custom_config_dict
-    from torch.ao.quantization.quantization_mappings import get_default_static_quant_module_mappings
-    from mqbench.utils.logger import logger
-    from mqbench.fake_quantize.quantize_base import QuantizeBase
     extra_fuse_dict = prepare_custom_config_dict.get('extra_fuse_dict', {})
     extra_fuse_dict.update(fuse_custom_config_dict)
     extra_quantizer_dict = prepare_custom_config_dict.get('extra_quantizer_dict', {})
