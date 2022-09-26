@@ -11,12 +11,13 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.utils import remove_self_loops
 import torch.fx
 from mqbench.prepare_by_platform import BackendType
-from prepare_by_platform import gnn_prepare_by_platform
+from utils.prepare_by_platform import gnn_prepare_by_platform
 from mqbench.utils.state import enable_quantization, enable_calibration
 
 target = 0
 dim = 64
 bit_width = 8
+batch_size = 32
 
 
 class MyTransform(object):
@@ -66,9 +67,9 @@ mean, std = mean[:, target].item(), std[:, target].item()
 test_dataset = dataset[:10000]
 val_dataset = dataset[10000:20000]
 train_dataset = dataset[20000:]
-test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
-val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
 
 class Net(torch.nn.Module):

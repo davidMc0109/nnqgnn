@@ -7,13 +7,13 @@ from torch_geometric.datasets import Planetoid
 import torch_geometric.transforms as T
 from torch_geometric.nn import GCNConv, ChebConv  # noqa
 from mqbench.prepare_by_platform import BackendType
-from prepare_by_platform import gnn_prepare_by_platform
+from utils.prepare_by_platform import gnn_prepare_by_platform
 from mqbench.utils.state import enable_quantization, enable_calibration
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--use_gdc', action='store_true',
                     help='Use GDC preprocessing.')
-parser.add_argument('--bit_width', default=2, type=int, help='the bit_width for quantization')
+parser.add_argument('--bit_width', default=-1, type=int, help='the bit_width for quantization')
 args = parser.parse_args()
 
 dataset = 'Cora'
@@ -75,7 +75,8 @@ class Net(torch.nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model, data = Net().to(device), data.to(device)
-model = gnn_prepare_by_platform(model, BackendType.Academic, my_qconfig).to(device)
+if args.bit_width > 0:
+    model = gnn_prepare_by_platform(model, BackendType.Academic, my_qconfig).to(device)
 
 optimizer = torch.optim.Adam([
     dict(params=model.conv1.parameters(), weight_decay=5e-4),
@@ -103,12 +104,13 @@ def test():
 
 best_val_acc = test_acc = 0
 for epoch in range(1, 501):
-    if epoch == 1:
-        enable_calibration(model)
-        pass
-    elif epoch == 6:
-        enable_quantization(model)
-        pass
+    if args.bit_width > 0:
+        if epoch == 1:
+            enable_calibration(model)
+            pass
+        elif epoch == 6:
+            enable_quantization(model)
+            pass
     train()
     train_acc, val_acc, tmp_test_acc = test()
     if val_acc > best_val_acc:

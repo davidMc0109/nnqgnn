@@ -8,7 +8,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GINConv, global_add_pool
 import torch.fx
 from mqbench.prepare_by_platform import BackendType
-from prepare_by_platform import gnn_prepare_by_platform
+from utils.prepare_by_platform import gnn_prepare_by_platform
 from mqbench.utils.state import enable_calibration, enable_quantization
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'TU')
@@ -20,7 +20,7 @@ test_dataset = dataset[:len(dataset) // 10]
 train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=128)
 
-bit_width = 2
+bit_width = -1
 
 
 class Net(torch.nn.Module):
@@ -90,7 +90,8 @@ torch.fx.wrap(global_add_pool)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = Net(dataset.num_features, 32, dataset.num_classes).to(device)
-model = gnn_prepare_by_platform(model, BackendType.Academic, my_qconfig).to(device)
+if bit_width>0:
+    model = gnn_prepare_by_platform(model, BackendType.Academic, my_qconfig).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 
@@ -122,10 +123,11 @@ def test(loader):
 
 
 for epoch in range(1, 101):
-    if epoch == 1:
-        enable_calibration(model)
-    elif epoch == 5:
-        enable_quantization(model)
+    if bit_width>0:
+        if epoch == 1:
+            enable_calibration(model)
+        elif epoch == 5:
+            enable_quantization(model)
     loss = train()
     train_acc = test(train_loader)
     test_acc = test(test_loader)
