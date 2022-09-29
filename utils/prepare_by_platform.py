@@ -18,14 +18,42 @@ from custom_quantizer.lp_academic_quantizer import replace_lp_academic_quantizer
 __all__ = ['gnn_prepare_by_platform']
 
 
+class NonableFakeActQuantizeWrapper(torch.nn.Module):
+    def __init__(self, fake_act_quantize):
+        super(NonableFakeActQuantizeWrapper, self).__init__()
+        self.fake_act_quantize = fake_act_quantize
+
+    def forward(self, X):
+        if X is None:
+            return X
+        elif not X.dtype == torch.float32:
+            return X
+        else:
+            return self.fake_act_quantize(X)
+
+class GNNCustomedTracer(CustomedTracer):
+    def __init__(self, *args, **kwargs):
+        super(GNNCustomedTracer, self).__init__(*args, **kwargs)
+
+    def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
+        # if the module is a MessagePassing, do not tracing in
+        if isinstance(m, MessagePassing):
+            return True
+        if isinstance(m, torch_geometric.nn.Set2Set):
+            logger.warning("A Set2Set detected, and not quantized. Tts quantization is not implemented since there is a LSTM inside")
+            return True
+        return super(GNNCustomedTracer, self).is_leaf_module(m, module_qualified_name)
+
+
 def gnn_prepare_by_platform(
         model: torch.nn.Module,
         deploy_backend: BackendType,
         prepare_custom_config_dict: Dict[str, Any] = {},
         custom_tracer: Tracer = None):
     if deploy_backend == BackendType.Academic:
+        logger.warning("Quantizer Replaced to LPAcademicQuantizer for Academic Backend")
         replace_lp_academic_quantizer()
-        # register_model_quantizer(deploy_backend)(LPAcademicQuantizer)
+
     if not ('extra_quantizer_dict' in prepare_custom_config_dict):
         prepare_custom_config_dict['extra_quantizer_dict'] = {}
     if not ('additional_module_type' in prepare_custom_config_dict['extra_quantizer_dict']):
@@ -33,31 +61,16 @@ def gnn_prepare_by_platform(
     prepare_custom_config_dict['extra_quantizer_dict']['additional_module_type'] += (MessagePassing,)
     customed_leaf_modules = prepare_custom_config_dict.get('leaf_module', [])
 
-    class GNNCustomedTracer(CustomedTracer):
-        def __init__(self, *args, **kwargs):
-            super(GNNCustomedTracer, self).__init__(*args, **kwargs)
-
-        def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-            # if the module is a MessagePassing, do not tracing in
-            if isinstance(m, MessagePassing):
-                return True
-            if isinstance(m, torch_geometric.nn.Set2Set):
-                logger.warning("A Set2Set detected, and not quantized. Tts quantization is not implemented since there is a LSTM inside")
-                return True
-            return super(GNNCustomedTracer, self).is_leaf_module(m, module_qualified_name)
-
     tracer = GNNCustomedTracer(customed_leaf_module=tuple(customed_leaf_modules))
     if custom_tracer is not None:
         tracer = custom_tracer
 
     graph_model = prepare_by_platform(model, deploy_backend, prepare_custom_config_dict, tracer)
-    hook = 0
 
     # replace fp to int
     extra_fuse_dict = prepare_custom_config_dict.get('extra_fuse_dict', {})
     extra_fuse_dict.update(fuse_custom_config_dict)
     extra_quantizer_dict = prepare_custom_config_dict.get('extra_quantizer_dict', {})
-    # extra_quantizer_dict['additional_module_type'] = (MessagePassing,)
     QUANTIZER_CLASS = DEFAULT_MODEL_QUANTIZER[deploy_backend]
 
     class ModifiedQuantized(QUANTIZER_CLASS):
@@ -71,18 +84,9 @@ def gnn_prepare_by_platform(
             super(ModifiedQuantized, self)._convert(module, mapping, inplace, scope)
             return module
 
-    class NonableFakeActQuantizeWrapper(torch.nn.Module):
-        def __init__(self, fake_act_quantize):
-            super(NonableFakeActQuantizeWrapper, self).__init__()
-            self.fake_act_quantize = fake_act_quantize
-
-        def forward(self, X):
-            if X is None:
-                return X
-            elif not X.dtype == torch.float32:
-                return X
-            else:
-                return self.fake_act_quantize(X)
+        def prepare(self, model, qconfig):
+            model = self._weight_quant(model, qconfig)
+            return model
 
     quantizer = ModifiedQuantized(extra_quantizer_dict, extra_fuse_dict)
 
@@ -106,7 +110,7 @@ def gnn_prepare_by_platform(
                         nn_v.qconfig = v.qconfig
                         sub_modules[k] = nn_v
                         # replace torch.nn.Linear -> torch.nn.qat.Linear, attach WeightFakeQuant
-                        nnq_v = quantizer._qat_swap_modules(nn_v, {})
+                        nnq_v = quantizer.prepare(nn_v, v.qconfig)
                         # put the replaced module back
                         module._modules[k.split('.')[-1]] = nnq_v
                         logger.info("Linear replaced for MessagePassing %s" % (k,))

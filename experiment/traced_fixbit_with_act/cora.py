@@ -10,7 +10,7 @@ from mqbench.prepare_by_platform import BackendType
 from mqbench.utils.state import enable_calibration, enable_quantization
 import torch.fx
 
-bit_width=-1
+bit_width=8
 dataset = 'Cora'
 transform = T.Compose([
     T.RandomNodeSplit(num_val=500, num_test=500),
